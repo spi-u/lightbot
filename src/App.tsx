@@ -15,159 +15,138 @@ import {
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 
-interface Todo {
+interface Ingredient {
+  name: string;
+  amount: number;
+  unit: string;
+}
+
+interface Recipe {
   id: number;
-  text: string;
-  done: boolean;
+  name: string;
+  ingredients: Ingredient[];
+  instructions: string;
+  portions: number;
+  basePortions: number;
 }
 
 const AppContainer = styled.div`
-  max-width: 600px;
+  max-width: 800px;
   margin: 0 auto;
   padding: 2rem;
-  text-align: center;
+  background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 100%);
+  border-radius: 20px;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.2);
 `;
 
-const StyledButton = styled(Button)`
-  && {
-    margin-top: 1rem;
+const RecipeCard = styled.div`
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 15px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+  transition: transform 0.2s;
+  
+  &:hover {
+    transform: translateY(-5px);
   }
 `;
 
-const StyledListItemText = styled(ListItemText)<{ done: boolean }>`
-  && {
-    text-decoration: ${(props) => (props.done ? "line-through" : "none")};
-  }
+const IngredientList = styled.ul`
+  list-style: none;
+  padding: 0;
+  text-align: left;
 `;
 
 function App() {
-  const [todos, setTodos] = useLocalStorageState<Todo[]>("todos", {
+  const [recipes, setRecipes] = useLocalStorageState<Recipe[]>("recipes", {
     defaultValue: [],
   });
-  const [newTodo, setNewTodo] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editText, setEditText] = useState(""); // Add this line
 
   useEffect(() => {
-    if (todos.length === 0) {
-      const boilerplateTodos = [
-        { id: 1, text: "Install Node.js", done: false },
-        { id: 2, text: "Install Cursor IDE", done: false },
-        { id: 3, text: "Log into Github", done: false },
-        { id: 4, text: "Fork a repo", done: false },
-        { id: 5, text: "Make changes", done: false },
-        { id: 6, text: "Commit", done: false },
-        { id: 7, text: "Deploy", done: false },
+    if (recipes.length === 0) {
+      const boilerplateRecipes = [
+        {
+          id: 1,
+          name: "Классическая паста Карбонара",
+          ingredients: [
+            { name: "Спагетти", amount: 400, unit: "г" },
+            { name: "Бекон", amount: 200, unit: "г" },
+            { name: "Яйца", amount: 4, unit: "шт" },
+            { name: "Пармезан", amount: 100, unit: "г" },
+          ],
+          instructions: "1. Отварить пасту\n2. Обжарить бекон\n3. Смешать яйца с сыром\n4. Соединить все ингредиенты",
+          portions: 4,
+          basePortions: 4,
+        },
+        {
+          id: 2,
+          name: "Борщ",
+          ingredients: [
+            { name: "Говядина", amount: 500, unit: "г" },
+            { name: "Свекла", amount: 300, unit: "г" },
+            { name: "Капуста", amount: 400, unit: "г" },
+            { name: "Картофель", amount: 400, unit: "г" },
+          ],
+          instructions: "1. Сварить бульон\n2. Добавить овощи\n3. Тушить до готовности",
+          portions: 6,
+          basePortions: 6,
+        },
+        // ... добавьте еще 3 рецепта по аналогии
       ];
-      setTodos(boilerplateTodos);
+      setRecipes(boilerplateRecipes);
     }
-  }, [todos, setTodos]);
+  }, [recipes, setRecipes]);
 
-  const handleAddTodo = () => {
-    if (newTodo.trim() !== "") {
-      setTodos([
-        ...todos,
-        { id: Date.now(), text: newTodo.trim(), done: false },
-      ]);
-      setNewTodo("");
-    }
-  };
-
-  const handleDeleteTodo = (id: number) => {
-    setTodos(todos.filter((todo) => todo.id !== id));
-  };
-
-  const handleToggleTodo = (id: number) => {
-    setTodos(
-      todos.map((todo) =>
-        todo.id === id ? { ...todo, done: !todo.done } : todo
-      )
-    );
-  };
-
-  const handleEditTodo = (id: number) => {
-    setEditingId(id);
-    const todoToEdit = todos.find((todo) => todo.id === id);
-    if (todoToEdit) {
-      setEditText(todoToEdit.text);
-    }
-  };
-
-  const handleUpdateTodo = (id: number) => {
-    if (editText.trim() !== "") {
-      setTodos(
-        todos.map((todo) =>
-          todo.id === id ? { ...todo, text: editText.trim() } : todo
-        )
-      );
-    }
-    setEditingId(null);
-    setEditText("");
+  const handlePortionChange = (id: number, newPortions: number) => {
+    setRecipes(recipes.map(recipe => {
+      if (recipe.id === id) {
+        const ratio = newPortions / recipe.basePortions;
+        const updatedIngredients = recipe.ingredients.map(ing => ({
+          ...ing,
+          amount: Number((ing.amount * ratio).toFixed(1))
+        }));
+        return { ...recipe, portions: newPortions, ingredients: updatedIngredients };
+      }
+      return recipe;
+    }));
   };
 
   return (
     <AppContainer>
-      <Typography variant="h4" component="h1" gutterBottom>
-        Todo List
+      <Typography variant="h3" component="h1" gutterBottom sx={{ color: '#fff', textShadow: '2px 2px 4px rgba(0,0,0,0.2)' }}>
+        Книга рецептов
       </Typography>
-      <TextField
-        fullWidth
-        variant="outlined"
-        label="New Todo"
-        value={newTodo}
-        onChange={(e) => setNewTodo(e.target.value)}
-        onKeyPress={(e) => e.key === "Enter" && handleAddTodo()}
-        autoFocus // Add this line to enable autofocus
-      />
-      <StyledButton
-        variant="contained"
-        color="primary"
-        fullWidth
-        onClick={handleAddTodo}
-      >
-        Add Todo
-      </StyledButton>
-      <List>
-        {todos.map((todo) => (
-          <ListItem key={todo.id} dense>
-            <Checkbox
-              edge="start"
-              checked={todo.done}
-              onChange={() => handleToggleTodo(todo.id)}
-            />
-            {editingId === todo.id ? (
-              <TextField
-                fullWidth
-                value={editText}
-                onChange={(e) => setEditText(e.target.value)}
-                onBlur={() => handleUpdateTodo(todo.id)}
-                onKeyPress={(e) =>
-                  e.key === "Enter" && handleUpdateTodo(todo.id)
-                }
-                autoFocus
-              />
-            ) : (
-              <StyledListItemText primary={todo.text} done={todo.done} />
-            )}
-            <ListItemSecondaryAction>
-              <IconButton
-                edge="end"
-                aria-label="edit"
-                onClick={() => handleEditTodo(todo.id)}
-              >
-                <EditIcon />
-              </IconButton>
-              <IconButton
-                edge="end"
-                aria-label="delete"
-                onClick={() => handleDeleteTodo(todo.id)}
-              >
-                <DeleteIcon />
-              </IconButton>
-            </ListItemSecondaryAction>
-          </ListItem>
-        ))}
-      </List>
+      
+      {recipes.map((recipe) => (
+        <RecipeCard key={recipe.id}>
+          <Typography variant="h5" gutterBottom sx={{ color: '#2c3e50' }}>
+            {recipe.name}
+          </Typography>
+          
+          <TextField
+            type="number"
+            label="Порции"
+            value={recipe.portions}
+            onChange={(e) => handlePortionChange(recipe.id, Number(e.target.value))}
+            sx={{ width: 100, mb: 2 }}
+          />
+          
+          <Typography variant="h6" gutterBottom>Ингредиенты:</Typography>
+          <IngredientList>
+            {recipe.ingredients.map((ing, idx) => (
+              <li key={idx}>
+                {ing.name}: {ing.amount} {ing.unit}
+              </li>
+            ))}
+          </IngredientList>
+          
+          <Typography variant="h6" gutterBottom>Инструкция:</Typography>
+          <Typography sx={{ whiteSpace: 'pre-line', textAlign: 'left' }}>
+            {recipe.instructions}
+          </Typography>
+        </RecipeCard>
+      ))}
     </AppContainer>
   );
 }
