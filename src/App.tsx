@@ -145,11 +145,19 @@ const CommandList = styled(Box)`
 const CommandItem = styled(Typography)`
   && {
     font-size: 1.2rem;
-    padding: 4px 0;
+    padding: 8px 12px;
     color: #666;
     display: flex;
     align-items: center;
     gap: 8px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background-color: #f5f5f5;
+      color: #f44336;
+    }
   }
 `;
 
@@ -266,6 +274,15 @@ const App = () => {
     }
   };
 
+  const removeCommand = (index: number) => {
+    if (!gameState.isExecuting) {
+      setGameState(prev => ({
+        ...prev,
+        commands: prev.commands.filter((_, i) => i !== index)
+      }));
+    }
+  };
+
   return (
     <AppContainer>
       <GameTitle variant="h1">
@@ -379,7 +396,14 @@ const App = () => {
               📝 Программа:
             </Typography>
             {gameState.commands.map((command, index) => (
-              <CommandItem key={index}>
+              <CommandItem 
+                key={index}
+                onClick={() => !gameState.isExecuting && removeCommand(index)}
+                sx={{ 
+                  opacity: gameState.isExecuting ? 0.7 : 1,
+                  cursor: gameState.isExecuting ? 'not-allowed' : 'pointer'
+                }}
+              >
                 {index + 1}.{' '}
                 {command === 'forward' ? '⬆️' : 
                  command === 'left' ? '⬅️' : 
