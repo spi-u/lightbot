@@ -24,7 +24,6 @@ interface GameState {
   commands: Command[];
   isExecuting: boolean;
   levelCompleted: boolean;
-  error?: string;
   explosion?: Position;
 }
 
@@ -71,12 +70,26 @@ const GameDescription = styled(Typography)`
 
 const CommandButton = styled(Button)`
   && {
-    font-size: 1rem;
-    padding: 8px 16px;
+    min-width: 50px;
+    width: 50px;
+    height: 50px;
+    padding: 0;
     border-radius: 8px;
-    text-transform: none;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin: 4px;
+    
+    img {
+      width: 32px;
+      height: 32px;
+    }
   }
+`;
+
+const ButtonContainer = styled(Box)`
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
 `;
 
 const GameCell = styled(Box)<{ 
@@ -113,11 +126,11 @@ const GameCell = styled(Box)<{
   }
 
   ${props => props.isExplosion && `
-    animation: explosion 0.5s ease-in-out;
+    animation: explosion 0.8s ease-in-out;
     @keyframes explosion {
-      0% { transform: scale(1); }
-      50% { transform: scale(1.2); }
-      100% { transform: scale(1); }
+      0% { transform: scale(1); background-color: #ffeb3b; }
+      50% { transform: scale(1.2); background-color: #ff9800; }
+      100% { transform: scale(1); background-color: #fff; }
     }
   `}
 `;
@@ -140,35 +153,6 @@ const CommandItem = styled(Typography)`
   }
 `;
 
-// Добавляем новый компонент для модального окна с ошибкой
-const ErrorOverlay = styled(Box)`
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: rgba(0, 0, 0, 0.5);
-  border-radius: 20px;
-  z-index: 1000;
-`;
-
-const ErrorMessage = styled(Box)`
-  background-color: #ffebee;
-  padding: 20px 40px;
-  border-radius: 12px;
-  border: 2px solid #ff5252;
-  text-align: center;
-  animation: fadeIn 0.3s ease-in-out;
-
-  @keyframes fadeIn {
-    from { transform: scale(0.9); opacity: 0; }
-    to { transform: scale(1); opacity: 1; }
-  }
-`;
-
 const App = () => {
   const [gameState, setGameState] = useState<GameState>({
     currentPosition: LEVEL_1.startPosition,
@@ -176,7 +160,6 @@ const App = () => {
     commands: [],
     isExecuting: false,
     levelCompleted: false,
-    error: undefined,
     explosion: undefined
   });
 
@@ -189,16 +172,16 @@ const App = () => {
     }
   };
 
-  const resetLevel = () => {
-    setGameState({
+  const resetLevel = (keepCommands: boolean = false) => {
+    setGameState(prev => ({
+      ...prev,
       currentPosition: LEVEL_1.startPosition,
       currentDirection: LEVEL_1.startDirection,
-      commands: [],
+      commands: keepCommands ? prev.commands : [],
       isExecuting: false,
       levelCompleted: false,
-      error: undefined,
       explosion: undefined
-    });
+    }));
   };
 
   const moveForward = (pos: Position, dir: Direction): Position => {
@@ -230,11 +213,14 @@ const App = () => {
     setGameState(prev => ({ 
       ...prev, 
       isExecuting: true,
-      error: undefined,
       explosion: undefined 
     }));
     
+    let hasExploded = false;
+
     for (const command of gameState.commands) {
+      if (hasExploded) break;
+      
       await new Promise(resolve => setTimeout(resolve, 500));
       
       setGameState(prev => {
@@ -246,12 +232,9 @@ const App = () => {
             if (isValidMove(newPosition)) {
               newState.currentPosition = newPosition;
             } else {
+              hasExploded = true;
               newState.explosion = prev.currentPosition;
-              newState.error = isOutOfBounds(newPosition) 
-                ? "Робот вышел за пределы поля!" 
-                : "Робот врезался в препятствие!";
               newState.isExecuting = false;
-              return newState;
             }
             break;
           case 'left':
@@ -265,31 +248,22 @@ const App = () => {
         return newState;
       });
 
-      if (gameState.error) break;
+      if (hasExploded) {
+        await new Promise(resolve => setTimeout(resolve, 800));
+        resetLevel(true);
+        break;
+      }
     }
     
-    if (!gameState.error) {
-      if (LEVEL_1.grid[gameState.currentPosition.y][gameState.currentPosition.x] === 2) {
+    if (!hasExploded) {
+      const finalPosition = gameState.currentPosition;
+      if (LEVEL_1.grid[finalPosition.y][finalPosition.x] === 2) {
         setGameState(prev => ({ ...prev, levelCompleted: true }));
       } else {
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        setGameState(prev => ({ 
-          ...prev, 
-          currentPosition: LEVEL_1.startPosition,
-          currentDirection: LEVEL_1.startDirection,
-          isExecuting: false,
-          error: "Робот не достиг цели. Попробуй другую последовательность команд!"
-        }));
+        resetLevel(true);
       }
     }
-  };
-
-  const isOutOfBounds = (pos: Position): boolean => {
-    return pos.x < 0 || 
-           pos.x >= LEVEL_1.grid[0].length || 
-           pos.y < 0 || 
-           pos.y >= LEVEL_1.grid.length;
   };
 
   return (
@@ -320,64 +294,85 @@ const App = () => {
                 ))}
               </Box>
             ))}
-            
-            {/* Заменяем старое сообщение об ошибке на новое модальное окно */}
-            {gameState.error && (
-              <ErrorOverlay>
-                <ErrorMessage>
-                  <Typography variant="h6" sx={{ color: '#c62828', fontWeight: 'bold' }}>
-                    ⚠️ {gameState.error}
-                  </Typography>
-                </ErrorMessage>
-              </ErrorOverlay>
-            )}
           </Paper>
         </Grid>
 
         <Grid item xs={12} md={4}>
-          <Stack spacing={1}>
+          <ButtonContainer>
             <CommandButton
               variant="contained"
               onClick={() => addCommand('forward')}
               disabled={gameState.isExecuting}
-              sx={{ backgroundColor: '#4caf50' }}
+              title="Вперёд"
+              sx={{ 
+                backgroundColor: '#4caf50',
+                '&:hover': { backgroundColor: '#45a049' }
+              }}
             >
-              Вперёд
+              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z'/%3E%3C/svg%3E" 
+                   alt="Вперёд" />
             </CommandButton>
+            
             <CommandButton
               variant="contained"
               onClick={() => addCommand('left')}
               disabled={gameState.isExecuting}
-              sx={{ backgroundColor: '#ff9800' }}
+              title="Налево"
+              sx={{ 
+                backgroundColor: '#ff9800',
+                '&:hover': { backgroundColor: '#f57c00' }
+              }}
             >
-              Налево
+              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z'/%3E%3C/svg%3E" 
+                   alt="Налево" />
             </CommandButton>
+            
             <CommandButton
               variant="contained"
               onClick={() => addCommand('right')}
               disabled={gameState.isExecuting}
-              sx={{ backgroundColor: '#ff9800' }}
+              title="Направо"
+              sx={{ 
+                backgroundColor: '#ff9800',
+                '&:hover': { backgroundColor: '#f57c00' }
+              }}
             >
-              Направо
+              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z'/%3E%3C/svg%3E" 
+                   alt="Направо" />
             </CommandButton>
+            
             <CommandButton
               variant="contained"
-              color="secondary"
               onClick={executeCommands}
               disabled={gameState.isExecuting || gameState.commands.length === 0}
-              sx={{ backgroundColor: '#2196f3' }}
+              title="Запустить"
+              sx={{ 
+                backgroundColor: '#2196f3',
+                '&:hover': { backgroundColor: '#1976d2' }
+              }}
             >
-              Запустить
+              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M8 5v14l11-7z'/%3E%3C/svg%3E" 
+                   alt="Запустить" />
             </CommandButton>
+            
             <CommandButton
               variant="outlined"
-              onClick={resetLevel}
+              onClick={() => resetLevel(false)}
               disabled={gameState.isExecuting}
-              sx={{ color: '#f44336', borderColor: '#f44336' }}
+              title="Сбросить"
+              sx={{ 
+                color: '#f44336',
+                borderColor: '#f44336',
+                '&:hover': { 
+                  backgroundColor: 'rgba(244, 67, 54, 0.04)',
+                  borderColor: '#d32f2f'
+                }
+              }}
             >
-              Сбросить
+              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f44336'%3E%3Cpath d='M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'/%3E%3C/svg%3E" 
+                   alt="Сбросить" />
             </CommandButton>
-          </Stack>
+          </ButtonContainer>
 
           <CommandList sx={{ mt: 2, maxHeight: '300px', overflowY: 'auto' }}>
             <Typography variant="h6" sx={{ mb: 1, color: '#2196f3' }}>
