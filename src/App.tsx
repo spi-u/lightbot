@@ -8,6 +8,7 @@ import {
 } from "@mui/material";
 import { useState } from "react";
 import styled from "styled-components";
+import { LEVELS } from './levels';
 
 // Типы
 type Direction = 'north' | 'east' | 'south' | 'west';
@@ -25,24 +26,8 @@ interface GameState {
   isExecuting: boolean;
   levelCompleted: boolean;
   explosion?: Position;
+  currentLevel: number;
 }
-
-// Уровни
-const LEVEL_1 = {
-  grid: [
-    [0, 0, 0, 1, 0, 0, 0, 0],
-    [0, 1, 0, 0, 0, 1, 0, 0],
-    [0, 0, 0, 1, 0, 0, 0, 0],
-    [1, 1, 0, 0, 0, 1, 1, 0],
-    [0, 0, 0, 1, 0, 0, 0, 0],
-    [0, 1, 1, 1, 0, 1, 0, 0],
-    [0, 0, 0, 0, 0, 0, 1, 0],
-    [1, 1, 0, 1, 1, 0, 0, 2],
-  ],
-  startPosition: { x: 0, y: 0 },
-  startDirection: 'east' as Direction,
-  description: "Помоги роботу добраться до зелёной клетки!"
-};
 
 const AppContainer = styled.div`
   max-width: 1200px;
@@ -161,14 +146,53 @@ const CommandItem = styled(Typography)`
   }
 `;
 
+// Добавляем новый компонент для салюта
+const Firework = styled(Box)`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 1000;
+
+  .firework {
+    font-size: 6rem;
+    animation: firework 1s infinite;
+  }
+
+  @keyframes firework {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); opacity: 0.8; }
+  }
+
+  .message {
+    position: absolute;
+    color: white;
+    font-size: 2rem;
+    text-align: center;
+    animation: fadeIn 0.5s ease-in;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+`;
+
 const App = () => {
   const [gameState, setGameState] = useState<GameState>({
-    currentPosition: LEVEL_1.startPosition,
-    currentDirection: LEVEL_1.startDirection,
+    currentPosition: LEVELS[0].startPosition,
+    currentDirection: LEVELS[0].startDirection,
     commands: [],
     isExecuting: false,
     levelCompleted: false,
-    explosion: undefined
+    explosion: undefined,
+    currentLevel: 0
   });
 
   const addCommand = (command: Command) => {
@@ -181,10 +205,11 @@ const App = () => {
   };
 
   const resetLevel = (keepCommands: boolean = false) => {
+    const currentLevel = LEVELS[gameState.currentLevel];
     setGameState(prev => ({
       ...prev,
-      currentPosition: LEVEL_1.startPosition,
-      currentDirection: LEVEL_1.startDirection,
+      currentPosition: currentLevel.startPosition,
+      currentDirection: currentLevel.startDirection,
       commands: keepCommands ? prev.commands : [],
       isExecuting: false,
       levelCompleted: false,
@@ -211,10 +236,10 @@ const App = () => {
 
   const isValidMove = (pos: Position): boolean => {
     return pos.x >= 0 && 
-           pos.x < LEVEL_1.grid[0].length && 
+           pos.x < LEVELS[gameState.currentLevel].grid[0].length && 
            pos.y >= 0 && 
-           pos.y < LEVEL_1.grid.length && 
-           LEVEL_1.grid[pos.y][pos.x] !== 1;
+           pos.y < LEVELS[gameState.currentLevel].grid.length && 
+           LEVELS[gameState.currentLevel].grid[pos.y][pos.x] !== 1;
   };
 
   const executeCommands = async () => {
@@ -225,9 +250,10 @@ const App = () => {
     }));
     
     let hasExploded = false;
+    let levelComplete = false;
 
     for (const command of gameState.commands) {
-      if (hasExploded) break;
+      if (hasExploded || levelComplete) break;
       
       await new Promise(resolve => setTimeout(resolve, 500));
       
@@ -239,6 +265,11 @@ const App = () => {
             const newPosition = moveForward(prev.currentPosition, prev.currentDirection);
             if (isValidMove(newPosition)) {
               newState.currentPosition = newPosition;
+              if (LEVELS[prev.currentLevel].grid[newPosition.y][newPosition.x] === 2) {
+                levelComplete = true;
+                newState.levelCompleted = true;
+                newState.isExecuting = false;
+              }
             } else {
               hasExploded = true;
               newState.explosion = prev.currentPosition;
@@ -263,13 +294,24 @@ const App = () => {
       }
     }
     
-    if (!hasExploded) {
-      const finalPosition = gameState.currentPosition;
-      if (LEVEL_1.grid[finalPosition.y][finalPosition.x] === 2) {
-        setGameState(prev => ({ ...prev, levelCompleted: true }));
-      } else {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        resetLevel(true);
+    if (!hasExploded && !levelComplete) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      resetLevel(true);
+    }
+
+    if (levelComplete) {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      const nextLevelIndex = gameState.currentLevel + 1;
+      if (nextLevelIndex < LEVELS.length) {
+        setGameState(prev => ({
+          currentPosition: LEVELS[nextLevelIndex].startPosition,
+          currentDirection: LEVELS[nextLevelIndex].startDirection,
+          commands: [],
+          isExecuting: false,
+          levelCompleted: false,
+          explosion: undefined,
+          currentLevel: nextLevelIndex
+        }));
       }
     }
   };
@@ -286,17 +328,17 @@ const App = () => {
   return (
     <AppContainer>
       <GameTitle variant="h1">
-        🤖 Робот-Путешественник
+        🤖 Робот-Путешественник - Уровень {gameState.currentLevel + 1}
       </GameTitle>
       
       <GameDescription variant="subtitle1">
-        Помоги роботу добраться до зелёной клетки! Составь правильную последовательность команд.
+        {LEVELS[gameState.currentLevel].description}
       </GameDescription>
 
       <Grid container spacing={2}>
         <Grid item xs={12} md={8}>
           <Paper sx={{ p: 2, borderRadius: '20px', backgroundColor: '#e3f2fd', position: 'relative' }}>
-            {LEVEL_1.grid.map((row, y) => (
+            {LEVELS[gameState.currentLevel].grid.map((row, y) => (
               <Box key={y} sx={{ display: 'flex', justifyContent: 'center', mb: 0.5 }}>
                 {row.map((cell, x) => (
                   <GameCell
@@ -415,18 +457,17 @@ const App = () => {
       </Grid>
 
       {gameState.levelCompleted && (
-        <Box sx={{ 
-          mt: 3, 
-          textAlign: 'center',
-          padding: '20px',
-          backgroundColor: '#81c784',
-          borderRadius: '15px',
-          animation: 'bounce 0.5s infinite'
-        }}>
-          <Typography variant="h4" sx={{ color: '#fff' }}>
-            🎉 Поздравляем! Уровень пройден! 🎉
+        <Firework>
+          <Box className="firework">
+            🎆 🎉 🎆
+          </Box>
+          <Typography className="message" variant="h4">
+            {gameState.currentLevel === LEVELS.length - 1 
+              ? "🏆 Поздравляем! Вы прошли игру! 🏆"
+              : `Уровень ${gameState.currentLevel + 1} пройден!`
+            }
           </Typography>
-        </Box>
+        </Firework>
       )}
     </AppContainer>
   );

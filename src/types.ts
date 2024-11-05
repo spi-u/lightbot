@@ -8,11 +8,11 @@ export interface Position {
 
 export interface GameLevel {
   id: number;
-  grid: number[][];  // 0 - пустая клетка, 1 - стена, 2 - цель
-  startPosition: Position;
-  startDirection: Direction;
   name: string;
   description: string;
+  grid: number[][];
+  startPosition: Position;
+  startDirection: Direction;
 }
 
 export interface GameState {
@@ -21,4 +21,6 @@ export interface GameState {
   commands: Command[];
   isExecuting: boolean;
   levelCompleted: boolean;
+  explosion?: Position;
+  currentLevel: number;
 } 
