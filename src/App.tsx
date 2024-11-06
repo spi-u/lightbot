@@ -5,6 +5,11 @@ import {
   Stack,
   Paper,
   Grid,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
 } from "@mui/material";
 import { useState } from "react";
 import styled from "styled-components";
@@ -13,20 +18,37 @@ import { LEVELS } from './levels';
 // Типы
 type Direction = 'north' | 'east' | 'south' | 'west';
 type Command = 'forward' | 'left' | 'right';
+type CommandType = Command | 'loop';
 
 interface Position {
   x: number;
   y: number;
 }
 
+interface LoopCommand {
+  type: 'loop';
+  iterations: number;
+  commands: SimpleCommand[];
+  id?: string;
+}
+
+interface SimpleCommand {
+  type: Command;
+  id: string;
+  source: 'program';
+}
+
+type CommandSource = SimpleCommand | LoopCommand;
+
 interface GameState {
   currentPosition: Position;
   currentDirection: Direction;
-  commands: Command[];
+  commands: CommandSource[];
   isExecuting: boolean;
   levelCompleted: boolean;
   explosion?: Position;
   currentLevel: number;
+  selectedCommands: Set<number>;
 }
 
 const AppContainer = styled.div`
@@ -127,7 +149,7 @@ const CommandList = styled(Box)`
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 `;
 
-const CommandItem = styled(Typography)`
+const CommandItem = styled(Typography)<{ isSelected?: boolean; isSelectionMode?: boolean }>`
   && {
     font-size: 1.2rem;
     padding: 8px 12px;
@@ -137,11 +159,25 @@ const CommandItem = styled(Typography)`
     gap: 8px;
     cursor: pointer;
     border-radius: 4px;
-    transition: all 0.2s ease;
+    transition: all 0.3s ease;
+    background-color: ${props => props.isSelected ? '#e3f2fd' : 'white'};
+    border: ${props => props.isSelected ? '2px solid #2196f3' : 'none'};
+    
+    ${props => props.isSelectionMode && `
+      animation: pulse 2s infinite;
+      
+      @keyframes pulse {
+        0% { transform: translateX(0); }
+        5% { transform: translateX(5px); }
+        10% { transform: translateX(0); }
+      }
+    `}
 
     &:hover {
-      background-color: #f5f5f5;
-      color: #f44336;
+      background-color: ${props => 
+        props.isSelectionMode ? '#e3f2fd' : '#fee8e7'};
+      color: ${props => 
+        props.isSelectionMode ? '#2196f3' : '#f44336'};
     }
   }
 `;
@@ -184,6 +220,31 @@ const Firework = styled(Box)`
   }
 `;
 
+const CreateLoopDialog = styled(Dialog)`
+  .MuiDialog-paper {
+    padding: 20px;
+  }
+`;
+
+const CreateLoopButton = styled(Button)`
+  && {
+    margin-left: 8px;
+  }
+`;
+
+const IterationCounter = styled(Box)`
+  position: sticky;
+  top: 0;
+  background-color: #fff;
+  padding: 8px;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 1;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+`;
+
 const App = () => {
   const [gameState, setGameState] = useState<GameState>({
     currentPosition: LEVELS[0].startPosition,
@@ -192,14 +253,26 @@ const App = () => {
     isExecuting: false,
     levelCompleted: false,
     explosion: undefined,
-    currentLevel: 0
+    currentLevel: 0,
+    selectedCommands: new Set()
   });
+
+  const [isLoopDialogOpen, setIsLoopDialogOpen] = useState(false);
+  const [loopIterations, setLoopIterations] = useState(2);
+
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
 
   const addCommand = (command: Command) => {
     if (!gameState.isExecuting) {
+      const newCommand: SimpleCommand = {
+        id: `${command}-${Date.now()}`,
+        type: command,
+        source: 'program'
+      };
+      
       setGameState(prev => ({
         ...prev,
-        commands: [...prev.commands, command]
+        commands: [...prev.commands, newCommand]
       }));
     }
   };
@@ -252,47 +325,62 @@ const App = () => {
     let hasExploded = false;
     let levelComplete = false;
 
-    for (const command of gameState.commands) {
-      if (hasExploded || levelComplete) break;
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      setGameState(prev => {
-        const newState = { ...prev };
+    const executeCommandsList = async (commands: CommandSource[]) => {
+      for (const command of commands) {
+        if (hasExploded || levelComplete) break;
         
-        switch (command) {
-          case 'forward':
-            const newPosition = moveForward(prev.currentPosition, prev.currentDirection);
-            if (isValidMove(newPosition)) {
-              newState.currentPosition = newPosition;
-              if (LEVELS[prev.currentLevel].grid[newPosition.y][newPosition.x] === 2) {
-                levelComplete = true;
-                newState.levelCompleted = true;
-                newState.isExecuting = false;
-              }
-            } else {
-              hasExploded = true;
-              newState.explosion = prev.currentPosition;
-              newState.isExecuting = false;
+        if (command.type === 'loop') {
+          for (let i = 0; i < command.iterations; i++) {
+            await executeCommandsList(command.commands);
+            if (hasExploded || levelComplete) {
+              // Если произошло столкновение внутри цикла, прерываем выполнение
+              break;
             }
-            break;
-          case 'left':
-            newState.currentDirection = rotateDirection(prev.currentDirection, 'left');
-            break;
-          case 'right':
-            newState.currentDirection = rotateDirection(prev.currentDirection, 'right');
-            break;
-        }
-        
-        return newState;
-      });
+          }
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          setGameState(prev => {
+            const newState = { ...prev };
+            
+            switch (command.type) {
+              case 'forward':
+                const newPosition = moveForward(prev.currentPosition, prev.currentDirection);
+                if (isValidMove(newPosition)) {
+                  newState.currentPosition = newPosition;
+                  if (LEVELS[prev.currentLevel].grid[newPosition.y][newPosition.x] === 2) {
+                    levelComplete = true;
+                    newState.levelCompleted = true;
+                    newState.isExecuting = false;
+                  }
+                } else {
+                  hasExploded = true;
+                  newState.explosion = prev.currentPosition;
+                  newState.isExecuting = false;
+                }
+                break;
+              case 'left':
+                newState.currentDirection = rotateDirection(prev.currentDirection, 'left');
+                break;
+              case 'right':
+                newState.currentDirection = rotateDirection(prev.currentDirection, 'right');
+                break;
+            }
+            
+            return newState;
+          });
 
-      if (hasExploded) {
-        await new Promise(resolve => setTimeout(resolve, 800));
-        resetLevel(true);
-        break;
+          // Если произошло столкновение, ждем анимацию взрыва и сбрасываем позицию
+          if (hasExploded) {
+            await new Promise(resolve => setTimeout(resolve, 800));
+            resetLevel(true);
+            break;
+          }
+        }
       }
-    }
+    };
+
+    await executeCommandsList(gameState.commands);
     
     if (!hasExploded && !levelComplete) {
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -310,7 +398,8 @@ const App = () => {
           isExecuting: false,
           levelCompleted: false,
           explosion: undefined,
-          currentLevel: nextLevelIndex
+          currentLevel: nextLevelIndex,
+          selectedCommands: new Set()
         }));
       }
     }
@@ -323,6 +412,66 @@ const App = () => {
         commands: prev.commands.filter((_, i) => i !== index)
       }));
     }
+  };
+
+  const toggleCommandSelection = (index: number) => {
+    if (gameState.isExecuting) return;
+    
+    setGameState(prev => {
+      const newSelection = new Set(prev.selectedCommands);
+      
+      // Если строка уже выбрана, просто удаляем её
+      if (newSelection.has(index)) {
+        newSelection.delete(index);
+      } else {
+        // Если это первая выбранная строка
+        if (newSelection.size === 0) {
+          newSelection.add(index);
+        } else {
+          // Находим минимальный и максимальный индексы выбранных строк
+          const selectedIndices = Array.from(newSelection);
+          const minIndex = Math.min(...selectedIndices);
+          const maxIndex = Math.max(...selectedIndices);
+          
+          // Проверяем, является ли новый индекс смежным с текущим выбором
+          if (index === minIndex - 1 || index === maxIndex + 1) {
+            newSelection.add(index);
+          } else {
+            // Если выбрана несмежная строка, начинаем новый выбор
+            newSelection.clear();
+            newSelection.add(index);
+          }
+        }
+      }
+      
+      return { ...prev, selectedCommands: newSelection };
+    });
+  };
+
+  const createLoop = () => {
+    const selectedIndices = Array.from(gameState.selectedCommands).sort((a, b) => a - b);
+    if (selectedIndices.length === 0) return;
+
+    const selectedCommands = selectedIndices.map(index => gameState.commands[index]);
+    const newLoop: LoopCommand = {
+      type: 'loop',
+      iterations: loopIterations,
+      commands: selectedCommands as SimpleCommand[]
+    };
+
+    const firstIndex = selectedIndices[0];
+    setGameState(prev => {
+      const newCommands = [...prev.commands];
+      newCommands.splice(firstIndex, selectedIndices.length, newLoop);
+      return {
+        ...prev,
+        commands: newCommands,
+        selectedCommands: new Set()
+      };
+    });
+
+    setIsLoopDialogOpen(false);
+    setIsSelectionMode(false);
   };
 
   return (
@@ -402,6 +551,29 @@ const App = () => {
             
             <CommandButton
               variant="contained"
+              onClick={() => {
+                if (isSelectionMode) {
+                  setIsLoopDialogOpen(true);
+                } else {
+                  setIsSelectionMode(true);
+                  setGameState(prev => ({ ...prev, selectedCommands: new Set() }));
+                }
+              }}
+              disabled={gameState.isExecuting || (!isSelectionMode && gameState.commands.length === 0)}
+              title={isSelectionMode ? "Создать цикл" : "Выбрать для цикла"}
+              sx={{ 
+                backgroundColor: isSelectionMode ? '#e91e63' : '#2196f3',
+                '&:hover': { 
+                  backgroundColor: isSelectionMode ? '#c2185b' : '#1976d2' 
+                }
+              }}
+            >
+              <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z'/%3E%3C/svg%3E"
+                   alt="Цикл" />
+            </CommandButton>
+            
+            <CommandButton
+              variant="contained"
               onClick={executeCommands}
               disabled={gameState.isExecuting || gameState.commands.length === 0}
               title="Запустить"
@@ -434,24 +606,140 @@ const App = () => {
           </ButtonContainer>
 
           <CommandList sx={{ mt: 2, maxHeight: '300px', overflowY: 'auto' }}>
-            <Typography variant="h6" sx={{ mb: 1, color: '#2196f3' }}>
+            <Typography variant="h6" sx={{ color: '#2196f3', mb: 1 }}>
               📝 Программа:
             </Typography>
+            
+            {isSelectionMode && (
+              <IterationCounter>
+                <TextField
+                  type="number"
+                  size="small"
+                  value={loopIterations}
+                  onChange={(e) => setLoopIterations(Math.max(1, parseInt(e.target.value) || 1))}
+                  sx={{ width: '80px' }}
+                />
+                <Button
+                  variant="contained"
+                  color="primary"
+                  size="small"
+                  onClick={() => {
+                    if (gameState.selectedCommands.size > 0) {
+                      createLoop();
+                    }
+                  }}
+                  disabled={gameState.selectedCommands.size === 0}
+                  sx={{ minWidth: '40px', width: '40px', p: 0 }}
+                >
+                  ✓
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="secondary"
+                  size="small"
+                  onClick={() => {
+                    setIsSelectionMode(false);
+                    setGameState(prev => ({ ...prev, selectedCommands: new Set() }));
+                  }}
+                  sx={{ minWidth: '40px', width: '40px', p: 0 }}
+                >
+                  ✕
+                </Button>
+              </IterationCounter>
+            )}
+            
             {gameState.commands.map((command, index) => (
-              <CommandItem 
-                key={index}
-                onClick={() => !gameState.isExecuting && removeCommand(index)}
-                sx={{ 
-                  opacity: gameState.isExecuting ? 0.7 : 1,
-                  cursor: gameState.isExecuting ? 'not-allowed' : 'pointer'
-                }}
-              >
-                {index + 1}.{' '}
-                {command === 'forward' ? '⬆️' : 
-                 command === 'left' ? '⬅️' : 
-                 '➡️'}
-              </CommandItem>
+              <div key={`command-${index}`}>
+                {command.type === 'loop' ? (
+                  <Box 
+                    sx={{ 
+                      border: '1px solid #2196f3',
+                      borderRadius: '4px',
+                      p: 1,
+                      mb: 1,
+                      backgroundColor: '#f5f5f5',
+                      cursor: 'pointer',
+                      '&:hover': {
+                        backgroundColor: '#fee8e7',
+                        borderColor: '#f44336',
+                        '& .loop-header': {
+                          color: '#f44336'
+                        }
+                      }
+                    }}
+                    onClick={() => !gameState.isExecuting && !isSelectionMode && removeCommand(index)}
+                  >
+                    <Typography 
+                      className="loop-header"
+                      sx={{ 
+                        color: '#2196f3', 
+                        mb: 1,
+                        transition: 'color 0.2s'
+                      }}
+                    >
+                      🔄 Повторить {command.iterations} раз:
+                    </Typography>
+                    {command.commands.map((subCommand, subIndex) => (
+                      <CommandItem 
+                        key={`subcommand-${subIndex}`}
+                        onClick={(e) => e.stopPropagation()}
+                        sx={{ 
+                          pointerEvents: 'none'
+                        }}
+                      >
+                        {subCommand.type === 'forward' ? '⬆️' : 
+                         subCommand.type === 'left' ? '⬅️' : 
+                         '➡️'}
+                      </CommandItem>
+                    ))}
+                  </Box>
+                ) : (
+                  <CommandItem
+                    isSelected={isSelectionMode && gameState.selectedCommands.has(index)}
+                    isSelectionMode={isSelectionMode}
+                    onClick={() => {
+                      if (isSelectionMode) {
+                        toggleCommandSelection(index);
+                      } else {
+                        removeCommand(index);
+                      }
+                    }}
+                  >
+                    {index + 1}.{' '}
+                    {command.type === 'forward' ? '⬆️' : 
+                     command.type === 'left' ? '⬅️' : 
+                     '➡️'}
+                  </CommandItem>
+                )}
+              </div>
             ))}
+
+            <CreateLoopDialog
+              open={isLoopDialogOpen}
+              onClose={() => {
+                setIsLoopDialogOpen(false);
+                setIsSelectionMode(false);
+                setGameState(prev => ({ ...prev, selectedCommands: new Set() }));
+              }}
+            >
+              <DialogTitle>Создание цикла</DialogTitle>
+              <DialogContent>
+                <TextField
+                  type="number"
+                  label="Количество повторений"
+                  value={loopIterations}
+                  onChange={(e) => setLoopIterations(Math.max(1, parseInt(e.target.value) || 1))}
+                  fullWidth
+                  sx={{ mt: 2 }}
+                />
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setIsLoopDialogOpen(false)}>Отмена</Button>
+                <Button onClick={createLoop} variant="contained" color="primary">
+                  Создать
+                </Button>
+              </DialogActions>
+            </CreateLoopDialog>
           </CommandList>
         </Grid>
       </Grid>
