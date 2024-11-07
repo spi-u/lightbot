@@ -49,7 +49,31 @@ interface GameState {
   explosion?: Position;
   currentLevel: number;
   selectedCommands: Set<number>;
+  characterSet: CharacterSet;
 }
+
+// Добавьте новые типы
+type CharacterSet = 'robot' | 'cookie' | 'fairy';
+
+interface CharacterTheme {
+  player: string;
+  target: string;
+}
+
+const CHARACTERS: Record<CharacterSet, CharacterTheme> = {
+  robot: {
+    player: '🤖',
+    target: '⭐'
+  },
+  cookie: {
+    player: '👾',
+    target: '🍪'
+  },
+  fairy: {
+    player: '👸',
+    target: '🦄'
+  }
+};
 
 const AppContainer = styled.div`
   max-width: 1200px;
@@ -99,32 +123,41 @@ const ButtonContainer = styled(Box)`
   margin-bottom: 16px;
 `;
 
-const GameCell = styled(Box)<{ 
-  isTarget?: boolean; 
-  isWall?: boolean; 
-  isRobot?: boolean; 
+// Создадим интерфейс для пропсов GameCell
+interface GameCellProps {
+  isTarget?: boolean;
+  isWall?: boolean;
+  isRobot?: boolean;
   direction?: Direction;
   isExplosion?: boolean;
-}>`
+  characterSet: CharacterSet;
+}
+
+// Создадим функцию для получения контента ячейки
+const getCellContent = (props: GameCellProps): string => {
+  if (props.isExplosion) return '💥';
+  if (props.isRobot) return CHARACTERS[props.characterSet].player;
+  if (props.isTarget) return CHARACTERS[props.characterSet].target;
+  return '';
+};
+
+// Обновим компонент GameCell
+const GameCell = styled(Box)<GameCellProps>`
   width: 50px;
   height: 50px;
   border: 2px solid #e3f2fd;
   border-radius: 8px;
   background-color: ${props => 
     props.isExplosion ? '#ffeb3b' :
-    props.isTarget ? '#81c784' : 
     props.isWall ? '#ff5252' : '#fff'};
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: ${props => props.isRobot ? '30px' : '24px'};
   
   &::after {
-    content: '${props => 
-      props.isExplosion ? '💥' :
-      props.isRobot ? '▲' : ''}';
-    color: #1976d2;
+    content: '${props => getCellContent(props)}';
     transform: rotate(${props => 
       props.direction === 'east' ? '90deg' :
       props.direction === 'south' ? '180deg' :
@@ -245,6 +278,36 @@ const IterationCounter = styled(Box)`
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 `;
 
+const CharacterSelect = styled(Box)`
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 24px;
+`;
+
+const CharacterOption = styled(Paper)<{ isSelected?: boolean }>`
+  padding: 16px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.3s ease;
+  border: ${props => props.isSelected ? '3px solid #2196f3' : '1px solid #e0e0e0'};
+  
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+  
+  .characters {
+    font-size: 24px;
+    margin-bottom: 8px;
+  }
+  
+  .label {
+    font-size: 14px;
+    color: #666;
+  }
+`;
+
 const App = () => {
   const [gameState, setGameState] = useState<GameState>({
     currentPosition: LEVELS[0].startPosition,
@@ -254,7 +317,8 @@ const App = () => {
     levelCompleted: false,
     explosion: undefined,
     currentLevel: 0,
-    selectedCommands: new Set()
+    selectedCommands: new Set(),
+    characterSet: 'robot' as CharacterSet
   });
 
   const [isLoopDialogOpen, setIsLoopDialogOpen] = useState(false);
@@ -399,7 +463,8 @@ const App = () => {
           levelCompleted: false,
           explosion: undefined,
           currentLevel: nextLevelIndex,
-          selectedCommands: new Set()
+          selectedCommands: new Set(),
+          characterSet: prev.characterSet
         }));
       }
     }
@@ -477,9 +542,31 @@ const App = () => {
   return (
     <AppContainer>
       <GameTitle variant="h1">
-        🤖 Робот-Путешественник - Уровень {gameState.currentLevel + 1}
+        🎮 Робот-Путешественник - Уровень {gameState.currentLevel + 1}
       </GameTitle>
       
+      <CharacterSelect>
+        {(Object.keys(CHARACTERS) as CharacterSet[]).map((set) => (
+          <CharacterOption
+            key={set}
+            isSelected={gameState.characterSet === set}
+            onClick={() => !gameState.isExecuting && setGameState(prev => ({
+              ...prev,
+              characterSet: set
+            }))}
+          >
+            <div className="characters">
+              {CHARACTERS[set].player} ➜ {CHARACTERS[set].target}
+            </div>
+            <div className="label">
+              {set === 'robot' ? 'Робот и звезда' :
+               set === 'cookie' ? 'Коржик и печенька' :
+               'Принцесса и единорог'}
+            </div>
+          </CharacterOption>
+        ))}
+      </CharacterSelect>
+
       <GameDescription variant="subtitle1">
         {LEVELS[gameState.currentLevel].description}
       </GameDescription>
@@ -497,6 +584,7 @@ const App = () => {
                     isRobot={gameState.currentPosition.x === x && gameState.currentPosition.y === y}
                     direction={gameState.currentPosition.x === x && gameState.currentPosition.y === y ? gameState.currentDirection : undefined}
                     isExplosion={gameState.explosion?.x === x && gameState.explosion?.y === y}
+                    characterSet={gameState.characterSet}
                     sx={{ m: 0.25 }}
                   />
                 ))}
